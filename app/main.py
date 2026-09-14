@@ -77,6 +77,98 @@ def get_popular_movies():
         "results": movies
     }
 
+@app.get("/genres")
+def get_genres():
+    url = "https://api.themoviedb.org/3/genre/movie/list"
+
+    headers = {
+        "Authorization": f"Bearer {TMDB_TOKEN}"
+    }
+
+    response = httpx.get(url, headers=headers)
+
+    data = response.json()
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code = response.status_code,
+            detail = data.get("status_message", "TMDB request failed")
+        )
+
+    return {
+        "genres": data["genres"]
+    }
+
+@app.get("/movies/discover")
+def discover_movies(
+    genre_id: int = 0,
+    min_rating: float = 0,
+    year: int = 0,
+    language: str = ""
+):
+    if min_rating < 0 or min_rating > 10:
+        raise HTTPException(
+            status_code = 400,
+            detail = "Minimum rating must be between 0 and 10"
+        )
+
+    if year < 0:
+        raise HTTPException(
+            status_code = 400,
+            detail = "Year cannot be negative"
+        )
+
+    url = "https://api.themoviedb.org/3/discover/movie"
+
+    headers = {
+        "Authorization": f"Bearer {TMDB_TOKEN}"
+    }
+
+    parameters = {
+        "sort_by": "popularity.desc"
+    }
+
+    if genre_id > 0:
+        parameters["with_genres"] = genre_id
+
+    if min_rating > 0:
+        parameters["vote_average.gte"] = min_rating
+
+    if year > 0:
+        parameters["primary_release_year"] = year
+
+    if language:
+        parameters["with_original_language"] = language
+
+    response = httpx.get(
+        url,
+        headers=headers,
+        params=parameters
+    )
+
+    data = response.json()
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code = response.status_code,
+            detail = data.get("status_message", "TMDB request failed")
+        )
+
+    movies = []
+
+    for movie in data["results"][:10]:
+        movies.append(format_movie(movie))
+
+    return {
+        "filters": {
+            "genre_id": genre_id,
+            "min_rating": min_rating,
+            "year": year,
+            "language": language
+        },
+        "results": movies
+    }
+
 @app.get("/movies/{movie_id}")
 def get_movie_details(movie_id: int):
     url = f"https://api.themoviedb.org/3/movie/{movie_id}"
