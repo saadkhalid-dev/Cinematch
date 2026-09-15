@@ -212,6 +212,9 @@ def recommend_movies(preferences: RecommendationRequest):
         "sort_by": "popularity.desc"
     }
 
+    if preferences.genre_id > 0:
+        parameters["with_genres"] = preferences.genre_id
+
     response = httpx.get(
         url,
         headers = headers,
@@ -236,7 +239,7 @@ def recommend_movies(preferences: RecommendationRequest):
             score += 3
             reasons.append("Matches preferred genre")
         
-        rating = movie.get("vote_avergae", 0)
+        rating = movie.get("vote_average", 0)
 
         if preferences.min_rating > 0 and rating >= preferences.min_rating:
             score += 2
@@ -250,12 +253,12 @@ def recommend_movies(preferences: RecommendationRequest):
         
         release_date = movie.get("release_date", "")
 
-        if preferences.min_year >= 0 and release_date:
+        if preferences.min_year > 0 and release_date:
             release_year = int(release_date[:4])
         
-        if release_year >= preferences.min_year:
-            score += 1
-            reasons.append("Released within preferred period")
+            if release_year >= preferences.min_year:
+                score += 1
+                reasons.append("Released within preferred period")
 
         if score > 0:
             recommended_movie = format_movie(movie)
@@ -270,7 +273,7 @@ def recommend_movies(preferences: RecommendationRequest):
                         reverse = True
                     )
     
-    result_count = len(recommendations)
+    top_recommendations = recommendations[:10]
 
     return {
         "preferences": {
@@ -279,7 +282,8 @@ def recommend_movies(preferences: RecommendationRequest):
             "language": preferences.language,
             "min_year": preferences.min_year
         },
-        "recommendations": recommendations[:10]
+        "result_count": len(top_recommendations),
+        "recommendations": top_recommendations
     }
 
 @app.get("/movies/{movie_id}")
