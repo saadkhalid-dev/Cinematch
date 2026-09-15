@@ -1,13 +1,15 @@
-import os
-import httpx
-
 from fastapi import FastAPI, HTTPException
-from dotenv import load_dotenv
 from pydantic import BaseModel
 
-load_dotenv()
-
-TMDB_TOKEN = os.getenv("TMDB_TOKEN")
+from app.recommender import rank_movies
+from app.tmdb import (
+    discover_movies,
+    get_genres,
+    get_movie_details,
+    get_popular_movies,
+    get_recommendation_candidates,
+    search_movies
+)
 
 app = FastAPI(title = "CineMatch API")
 
@@ -17,40 +19,13 @@ class RecommendationRequest(BaseModel):
     language: str = ""
     min_year: int = 0
 
-def format_movie(movie):
-    return {
-        "id": movie["id"],
-        "title": movie.get("title", ""),
-        "release_date": movie.get("release_date", ""),
-        "rating": movie.get("vote_average", 0),
-        "language": movie.get("original_language", ""),
-        "overview": movie.get("overview", "")
-    }
-
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
 
 @app.get("/movies/search")
-def search_movies(query: str):
-    url = "https://api.themoviedb.org/3/search/movie"
-
-    headers = {
-        "Authorization": f"Bearer {TMDB_TOKEN}"
-    }
-
-    parameters = {
-        "query": query
-    }
-
-    response = httpx.get(url, headers = headers, params = parameters)
-
-    data = response.json()
-
-    movies = []
-
-    for movie in data["results"]:
-        movies.append(format_movie(movie))
+def search_movie_endpoint(query: str):
+    movies = search_movies(query)
 
     return {
         "query": query,
@@ -58,57 +33,19 @@ def search_movies(query: str):
     }
 
 @app.get("/movies/popular")
-def get_popular_movies():
-    url = "https://api.themoviedb.org/3/movie/popular"
-
-    headers = {
-        "Authorization": f"Bearer {TMDB_TOKEN}",
-        "accept": "application/json"
-    }
-
-    response = httpx.get(url, headers = headers)
-
-    data = response.json()
-
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code = response.status_code,
-            detail = data.get("status_message", "TMDB request failed")
-        )
-
-    movies = []
-
-    for movie in data["results"][:10]:
-        movies.append(format_movie(movie))
-
+def popular_movies_endpoint():
     return {
-        "results": movies
+        "results": get_popular_movies()
     }
 
 @app.get("/genres")
-def get_genres():
-    url = "https://api.themoviedb.org/3/genre/movie/list"
-
-    headers = {
-        "Authorization": f"Bearer {TMDB_TOKEN}"
-    }
-
-    response = httpx.get(url, headers = headers)
-
-    data = response.json()
-
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code = response.status_code,
-            detail = data.get("status_message", "TMDB request failed")
-        )
-
+def genres_endpoint():
     return {
-        "genres": data["genres"]
+        "genres": get_genres()
     }
 
 @app.get("/movies/discover")
-def discover_movies(
+def discover_movies_endpoint(
     genre_id: int = 0,
     min_rating: float = 0,
     year: int = 0,
@@ -126,46 +63,7 @@ def discover_movies(
             detail = "Year cannot be negative"
         )
 
-    url = "https://api.themoviedb.org/3/discover/movie"
-
-    headers = {
-        "Authorization": f"Bearer {TMDB_TOKEN}"
-    }
-
-    parameters = {
-        "sort_by": "popularity.desc"
-    }
-
-    if genre_id > 0:
-        parameters["with_genres"] = genre_id
-
-    if min_rating > 0:
-        parameters["vote_average.gte"] = min_rating
-
-    if year > 0:
-        parameters["primary_release_year"] = year
-
-    if language:
-        parameters["with_original_language"] = language
-
-    response = httpx.get(
-        url,
-        headers = headers,
-        params = parameters
-    )
-
-    data = response.json()
-
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code = response.status_code,
-            detail = data.get("status_message", "TMDB request failed")
-        )
-
-    movies = []
-
-    for movie in data["results"][:10]:
-        movies.append(format_movie(movie))
+    movies = discover_movies(genre_id, min_rating, year, language)
 
     return {
         "filters": {
@@ -202,78 +100,15 @@ def recommend_movies(preferences: RecommendationRequest):
             detail = "At least one recommendation preference is required"
         )
 
-    url = "https://api.themoviedb.org/3/discover/movie"
+    candidates = get_recommendation_candidates(preferences.genre_id)
 
-    headers = {
-        "Authorization": f"Bearer {TMDB_TOKEN}"
-    }
-
-    parameters = {
-        "sort_by": "popularity.desc"
-    }
-
-    if preferences.genre_id > 0:
-        parameters["with_genres"] = preferences.genre_id
-
-    response = httpx.get(
-        url,
-        headers = headers,
-        params = parameters
+    recommendations = rank_movies(
+        candidates,
+        preferences.genre_id,
+        preferences.min_rating,
+        preferences.language,
+        preferences.min_year
     )
-
-    data = response.json()
-
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code = response.status_code,
-            detail = data.get("status_message", "TMDB request failed")
-        )
-
-    recommendations = []
-
-    for movie in data["results"][:20]:
-        score = 0
-        reasons = []
-
-        if (preferences.genre_id > 0 and preferences.genre_id in movie.get("genre_ids", [])):
-            score += 3
-            reasons.append("Matches preferred genre")
-        
-        rating = movie.get("vote_average", 0)
-
-        if preferences.min_rating > 0 and rating >= preferences.min_rating:
-            score += 2
-            reasons.append("Meets preferred rating")
-        
-        language = movie.get("original_language", "")
-
-        if preferences.language and language == preferences.language:
-            score += 1
-            reasons.append("Matches preferred language")
-        
-        release_date = movie.get("release_date", "")
-
-        if preferences.min_year > 0 and release_date:
-            release_year = int(release_date[:4])
-        
-            if release_year >= preferences.min_year:
-                score += 1
-                reasons.append("Released within preferred period")
-
-        if score > 0:
-            recommended_movie = format_movie(movie)
-            recommended_movie["match_score"] = score
-            recommended_movie["reasons"] = reasons
-            recommendations.append(recommended_movie)
-    
-    recommendations.sort(key = lambda movie: (
-                            movie["match_score"],
-                            movie["rating"]
-                        ), 
-                        reverse = True
-                    )
-    
-    top_recommendations = recommendations[:10]
 
     return {
         "preferences": {
@@ -282,42 +117,10 @@ def recommend_movies(preferences: RecommendationRequest):
             "language": preferences.language,
             "min_year": preferences.min_year
         },
-        "result_count": len(top_recommendations),
-        "recommendations": top_recommendations
+        "result_count": len(recommendations),
+        "recommendations": recommendations
     }
 
 @app.get("/movies/{movie_id}")
-def get_movie_details(movie_id: int):
-    url = f"https://api.themoviedb.org/3/movie/{movie_id}"
-
-    headers = {
-        "Authorization": f"Bearer {TMDB_TOKEN}"
-    }
-
-    response = httpx.get(url, headers = headers)
-
-    if response.status_code == 404:
-        raise HTTPException(
-            status_code = 404,
-            detail = "Movie not found"
-        )
-
-    data = response.json()
-
-    genres = []
-
-    for genre in data.get("genres", []):
-        genres.append(genre["name"])
-
-    return {
-        "id": data.get("id"),
-        "title": data.get("title", ""),
-        "release_date": data.get("release_date", ""),
-        "rating": data.get("vote_average", 0),
-        "language": data.get("original_language", ""),
-        "runtime_minutes": data.get("runtime"),
-        "genres": genres,
-        "tagline": data.get("tagline", ""),
-        "overview": data.get("overview", ""),
-        "movie_status": data.get("status", "")
-    }
+def movie_details_endpoint(movie_id: int):
+    return get_movie_details(movie_id)
