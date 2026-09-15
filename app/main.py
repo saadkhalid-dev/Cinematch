@@ -11,7 +11,11 @@ from app.tmdb import (
     search_movies
 )
 
-app = FastAPI(title = "CineMatch API")
+app = FastAPI(
+    title="CineMatch API",
+    description="Movie discovery and recommendation API powered by TMDB.",
+    version="1.0.0"
+)
 
 # Specifies the preferences accepted by the recommendation endpoint.
 class RecommendationRequest(BaseModel):
