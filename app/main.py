@@ -13,12 +13,14 @@ from app.tmdb import (
 
 app = FastAPI(title = "CineMatch API")
 
+# Specifies the preferences accepted by the recommendation endpoint.
 class RecommendationRequest(BaseModel):
     genre_id: int = 0
     min_rating: float = 0
     language: str = ""
     min_year: int = 0
 
+# Endpoint to verify if the API is up and running.
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -51,6 +53,8 @@ def discover_movies_endpoint(
     year: int = 0,
     language: str = ""
 ):
+
+    # Validate the filters before forwarding to TMDB.
     if min_rating < 0 or min_rating > 10:
         raise HTTPException(
             status_code = 400,
@@ -100,8 +104,10 @@ def recommend_movies(preferences: RecommendationRequest):
             detail = "At least one recommendation preference is required"
         )
 
+    # Select appropriate movies from TMDB before using our rating system on them.
     candidates = get_recommendation_candidates(preferences.genre_id)
 
+    # Rank the candidates in accordance with the user's preferences.
     recommendations = rank_movies(
         candidates,
         preferences.genre_id,

@@ -1,12 +1,15 @@
 from app.tmdb import format_movie
 
 def rank_movies(movies, genre_id=0, min_rating=0, language="", min_year=0):
+
+    # Rate each candidate on the basis of user preference.
     recommendations = []
 
     for movie in movies:
         score = 0
         reasons = []
 
+        # Most weight is given to genre since it is the primary preference.
         if genre_id > 0 and genre_id in movie.get("genre_ids", []):
             score += 3
             reasons.append("Matches preferred genre")
@@ -34,6 +37,7 @@ def rank_movies(movies, genre_id=0, min_rating=0, language="", min_year=0):
             score += 1
             reasons.append("Released within preferred period")
 
+        # Movies not matching any preference should be excluded.
         if score > 0:
             recommended_movie = format_movie(movie)
 
@@ -42,6 +46,7 @@ def rank_movies(movies, genre_id=0, min_rating=0, language="", min_year=0):
 
             recommendations.append(recommended_movie)
 
+    # Sort by score in the first instance, and thereafter by movie rating.
     recommendations.sort(key = lambda movie: (
             movie["match_score"],
             movie["rating"]

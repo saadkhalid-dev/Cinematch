@@ -4,6 +4,7 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import HTTPException
 
+# Load the TMDB API key from the local .env file.
 load_dotenv()
 
 TMDB_TOKEN = os.getenv("TMDB_TOKEN", "").strip()
@@ -18,6 +19,7 @@ TMDB_HEADERS = {
     "accept": "application/json"
 }
 
+# Shared class for authenticating TMDB requests and error handling.
 def tmdb_get(endpoint, parameters=None, not_found_message=None):
     url = f"{TMDB_BASE_URL}{endpoint}"
 
@@ -61,6 +63,7 @@ def tmdb_get(endpoint, parameters=None, not_found_message=None):
     
     return data
 
+# Transform raw TMDB movies data to fit the simple structure used by CineMatch.
 def format_movie(movie):
     return {
         "id": movie["id"],
@@ -122,6 +125,7 @@ def discover_movies(genre_id = 0, min_rating = 0, year = 0, language = ""):
 
     return movies
 
+# Give back raw movie data to enable recommendation algorithm to score each item.
 def get_recommendation_candidates(genre_id = 0):
     parameters = {
         "sort_by": "popularity.desc"
@@ -134,6 +138,7 @@ def get_recommendation_candidates(genre_id = 0):
 
     return data.get("results", [])[:20]
 
+# Get and structure detailed data for one movie.
 def get_movie_details(movie_id):
     data = tmdb_get(f"/movie/{movie_id}", not_found_message="Movie not found")
 
